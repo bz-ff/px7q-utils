@@ -1,0 +1,12 @@
+{
+  "name": "Google TPM Tracker",
+  "short_name": "TPM Tracker",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0a0a0f",
+  "theme_color": "#6366f1",
+  "icons": [
+    { "src": "./icon-192.png", "sizes": "192x192", "type": "image/png" }
+  ]
+}
