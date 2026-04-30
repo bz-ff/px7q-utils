@@ -261,8 +261,6 @@
 
     let html = '<h1 style="font-size:24px;font-weight:700;margin-bottom:16px">Calendar</h1>';
     html += '<div class="calendar-grid">';
-    html += addHeaders(headers);
-
     let lastPhase = 0;
     let lastMonth = '';
     let gridCol = 0; // 0-6, tracks current position in the 7-col grid
@@ -298,7 +296,7 @@
       if (gridCol === 0) {
         html += padRow(col);
         gridCol = col;
-      } else if (col <= gridCol) {
+      } else if (col < gridCol) {
         // Wrap to next row — fill remainder then pad new row
         html += finishRow(gridCol);
         html += padRow(col);
