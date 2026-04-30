@@ -244,6 +244,31 @@ body { padding-bottom: 80px; }
 .plan-complete h2 { font-size: 24px; margin-bottom: 8px; color: var(--success); }
 .plan-complete p { color: var(--text-secondary); }
 
+/* Sync */
+.sync-banner {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 12px 16px;
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px; font-size: 14px; color: var(--text-secondary);
+}
+.btn-setup-sync {
+  background: var(--accent); color: #fff; border: none;
+  padding: 6px 14px; border-radius: 6px; font-size: 13px;
+  font-weight: 600; cursor: pointer;
+}
+.sync-input {
+  width: 100%; padding: 10px 12px; margin-top: 8px;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 8px; color: var(--text); font-size: 15px;
+  font-family: inherit;
+}
+.sync-input:focus { outline: none; border-color: var(--accent); }
+.sync-active {
+  font-size: 12px; color: var(--text-muted); cursor: pointer;
+  padding: 4px 8px; border-radius: 6px; margin-left: auto;
+}
+.sync-active:active { color: var(--accent); }
+
 @media (max-width: 500px) {
   .phase-cards { flex-direction: column; }
   .streak-row { flex-direction: column; }

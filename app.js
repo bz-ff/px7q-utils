@@ -4,6 +4,109 @@
   const LS_TASKS = 'gtpm_tasks';
   const LS_SCORECARD = 'gtpm_scorecard';
   const LS_START = 'gtpm_start_date';
+  const LS_GH_TOKEN = 'gtpm_gh_token';
+  const LS_GH_REPO = 'gtpm_gh_repo';
+  const SYNC_FILE = 'state.json';
+
+  // --- GITHUB SYNC ---
+  let syncDebounceTimer = null;
+
+  function getGHConfig() {
+    const token = localStorage.getItem(LS_GH_TOKEN);
+    const repo = localStorage.getItem(LS_GH_REPO);
+    if (!token || !repo) return null;
+    return { token, repo };
+  }
+
+  function getSyncPayload() {
+    return {
+      tasks: state.tasks,
+      scorecard: state.scorecard,
+      startDate: state.startDate,
+      lastSync: new Date().toISOString()
+    };
+  }
+
+  async function ghReadState() {
+    const cfg = getGHConfig();
+    if (!cfg) return null;
+    try {
+      const res = await fetch(
+        'https://api.github.com/repos/' + cfg.repo + '/contents/' + SYNC_FILE,
+        { headers: { 'Authorization': 'token ' + cfg.token, 'Accept': 'application/vnd.github.v3+json' } }
+      );
+      if (!res.ok) return null;
+      const data = await res.json();
+      return { content: JSON.parse(atob(data.content)), sha: data.sha };
+    } catch(e) { return null; }
+  }
+
+  async function ghWriteState() {
+    const cfg = getGHConfig();
+    if (!cfg) return;
+    try {
+      // Get current SHA
+      let sha = null;
+      const existing = await fetch(
+        'https://api.github.com/repos/' + cfg.repo + '/contents/' + SYNC_FILE,
+        { headers: { 'Authorization': 'token ' + cfg.token, 'Accept': 'application/vnd.github.v3+json' } }
+      );
+      if (existing.ok) {
+        const d = await existing.json();
+        sha = d.sha;
+      }
+      const body = {
+        message: 'sync state',
+        content: btoa(JSON.stringify(getSyncPayload(), null, 2))
+      };
+      if (sha) body.sha = sha;
+      await fetch(
+        'https://api.github.com/repos/' + cfg.repo + '/contents/' + SYNC_FILE,
+        {
+          method: 'PUT',
+          headers: { 'Authorization': 'token ' + cfg.token, 'Accept': 'application/vnd.github.v3+json', 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        }
+      );
+    } catch(e) { /* silent fail */ }
+  }
+
+  function debouncedSync() {
+    clearTimeout(syncDebounceTimer);
+    syncDebounceTimer = setTimeout(ghWriteState, 2000);
+  }
+
+  async function pullAndMerge() {
+    const remote = await ghReadState();
+    if (!remote || !remote.content) return;
+    const r = remote.content;
+    // Merge: remote wins for any key that exists remotely
+    if (r.startDate && !state.startDate) {
+      state.startDate = r.startDate;
+      localStorage.setItem(LS_START, r.startDate);
+    }
+    if (r.tasks) {
+      Object.assign(state.tasks, r.tasks);
+      // Local true wins over remote false (union merge for completed tasks)
+      for (const k in r.tasks) {
+        if (r.tasks[k]) state.tasks[k] = true;
+      }
+      localStorage.setItem(LS_TASKS, JSON.stringify(state.tasks));
+    }
+    if (r.scorecard) {
+      // Higher value wins
+      for (const k in r.scorecard) {
+        const local = state.scorecard[k] || 0;
+        const remote = r.scorecard[k] || 0;
+        state.scorecard[k] = Math.max(local, remote);
+      }
+      for (const k in state.scorecard) {
+        if (!(k in r.scorecard)) continue;
+      }
+      localStorage.setItem(LS_SCORECARD, JSON.stringify(state.scorecard));
+    }
+    render();
+  }
 
   const CATEGORY_COLORS = {
     'study': '#818cf8',
@@ -45,8 +148,8 @@
     }
   }
 
-  function saveTasks() { localStorage.setItem(LS_TASKS, JSON.stringify(state.tasks)); }
-  function saveScorecard() { localStorage.setItem(LS_SCORECARD, JSON.stringify(state.scorecard)); }
+  function saveTasks() { localStorage.setItem(LS_TASKS, JSON.stringify(state.tasks)); debouncedSync(); }
+  function saveScorecard() { localStorage.setItem(LS_SCORECARD, JSON.stringify(state.scorecard)); debouncedSync(); }
 
   function getTodayDayNumber() {
     if (!state.startDate) return 1;
@@ -119,7 +222,75 @@
 
   const app = document.getElementById('app');
 
+  function renderSyncBanner() {
+    const cfg = getGHConfig();
+    if (cfg) return '';
+    return `<div class="sync-banner" id="syncBanner">
+      <span>&#x1F504; Sync across devices via GitHub</span>
+      <button class="btn-setup-sync" id="setupSyncBtn">Set Up</button>
+    </div>`;
+  }
+
+  function renderSyncSetup() {
+    const cfg = getGHConfig();
+    app.innerHTML = `
+      <h1 style="font-size:24px;font-weight:700;margin-bottom:8px">Sync Settings</h1>
+      <p style="font-size:14px;color:var(--text-secondary);margin-bottom:20px">
+        Sync your progress across devices using a GitHub file.<br>
+        Create a <strong>fine-grained Personal Access Token</strong> at
+        github.com &rarr; Settings &rarr; Developer settings &rarr; Personal access tokens &rarr; Fine-grained tokens.<br>
+        Scope it to your repo with <strong>Contents: Read and Write</strong> permission.
+      </p>
+      <div class="score-card">
+        <div class="score-label">Repository (owner/repo)</div>
+        <input type="text" id="syncRepo" class="sync-input" placeholder="bz-ff/px7q-utils" value="${cfg ? cfg.repo : ''}">
+      </div>
+      <div class="score-card">
+        <div class="score-label">Personal Access Token</div>
+        <input type="password" id="syncToken" class="sync-input" placeholder="github_pat_..." value="${cfg ? cfg.token : ''}">
+      </div>
+      <div style="display:flex;gap:10px;margin-top:16px">
+        <button class="btn-start" id="saveSyncBtn">Save & Sync</button>
+        <button class="btn-start" id="cancelSyncBtn" style="background:var(--border)">Back</button>
+      </div>
+      ${cfg ? '<button class="btn-start" id="removeSyncBtn" style="background:#ef4444;margin-top:12px;width:100%">Remove Sync</button>' : ''}
+      <div id="syncStatus" style="margin-top:16px;font-size:14px;color:var(--text-secondary)"></div>`;
+
+    document.getElementById('saveSyncBtn').onclick = async () => {
+      const repo = document.getElementById('syncRepo').value.trim();
+      const token = document.getElementById('syncToken').value.trim();
+      if (!repo || !token) return;
+      localStorage.setItem(LS_GH_REPO, repo);
+      localStorage.setItem(LS_GH_TOKEN, token);
+      document.getElementById('syncStatus').textContent = 'Testing connection...';
+      const remote = await ghReadState();
+      if (remote === null) {
+        // No state file yet — push current state
+        document.getElementById('syncStatus').textContent = 'Connected! Pushing current state...';
+        await ghWriteState();
+      } else {
+        document.getElementById('syncStatus').textContent = 'Connected! Pulling remote state...';
+        await pullAndMerge();
+      }
+      document.getElementById('syncStatus').innerHTML = '<span style="color:#22c55e">Sync active!</span> Returning...';
+      setTimeout(() => switchView('today'), 1000);
+    };
+    document.getElementById('cancelSyncBtn').onclick = () => switchView('today');
+    const removeBtn = document.getElementById('removeSyncBtn');
+    if (removeBtn) {
+      removeBtn.onclick = () => {
+        localStorage.removeItem(LS_GH_TOKEN);
+        localStorage.removeItem(LS_GH_REPO);
+        switchView('today');
+      };
+    }
+  }
+
   function render() {
+    if (state.currentView === 'sync') {
+      renderSyncSetup();
+      return;
+    }
     if (!state.startDate) {
       renderOnboarding();
       return;
@@ -130,6 +301,11 @@
       case 'progress': renderProgress(); break;
       case 'scorecard': renderScorecard(); break;
     }
+    // Bind sync buttons
+    const setupBtn = document.getElementById('setupSyncBtn');
+    if (setupBtn) setupBtn.onclick = () => switchView('sync');
+    const syncBtn = document.getElementById('syncIndicBtn');
+    if (syncBtn) syncBtn.onclick = () => switchView('sync');
   }
 
   function renderOnboarding() {
@@ -202,9 +378,14 @@
 
     const weekdayType = ['Saturday','Sunday'].includes(dayData.weekday) ? 'Weekend' : 'Weekday';
 
+    const syncBanner = renderSyncBanner();
+    const syncIndicator = getGHConfig() ? '<div class="sync-active" id="syncIndicBtn">&#x2601; Synced</div>' : '';
+
     app.innerHTML = `
+      ${syncBanner}
       ${milestoneHtml}
       <div class="day-header">
+        <div style="display:flex;justify-content:space-between;align-items:center">${syncIndicator}</div>
         <div class="day-nav">
           <button class="nav-arrow" id="prevDay">&#9664;</button>
           <h1>Day ${dayNum} of 90</h1>
@@ -523,6 +704,11 @@
   });
 
   render();
+
+  // Pull from GitHub on load if configured
+  if (getGHConfig()) {
+    pullAndMerge();
+  }
 
   // PWA
   if ('serviceWorker' in navigator) {
