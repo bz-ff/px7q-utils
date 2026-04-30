@@ -1,8 +1,10 @@
 {
-  "tasks": {},
+  "tasks": {
+    "d1t1": true
+  },
   "scorecard": {
     "sql": 0
   },
   "startDate": "2026-04-30",
-  "lastSync": "2026-04-30T05:48:40.712Z"
+  "lastSync": "2026-04-30T05:48:53.923Z"
 }
