@@ -232,40 +232,81 @@
 
   function renderCalendar() {
     const todayNum = getTodayDayNumber();
+    const headers = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+
+    function getMondayOffset(dt) {
+      const dow = dt.getDay(); // 0=Sun
+      return dow === 0 ? 6 : dow - 1;
+    }
+
+    function addHeaders(h) {
+      let out = '';
+      h.forEach(x => { out += `<div class="cal-header">${x}</div>`; });
+      return out;
+    }
+
+    function padRow(col) {
+      let out = '';
+      for (let e = 0; e < col; e++) out += '<div class="cal-cell empty"></div>';
+      return out;
+    }
+
+    function finishRow(col) {
+      let out = '';
+      if (col > 0 && col < 7) {
+        for (let e = col; e < 7; e++) out += '<div class="cal-cell empty"></div>';
+      }
+      return out;
+    }
+
     let html = '<h1 style="font-size:24px;font-weight:700;margin-bottom:16px">Calendar</h1>';
     html += '<div class="calendar-grid">';
-    const headers = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-    headers.forEach(h => { html += `<div class="cal-header">${h}</div>`; });
+    html += addHeaders(headers);
 
     let lastPhase = 0;
     let lastMonth = '';
+    let gridCol = 0; // 0-6, tracks current position in the 7-col grid
 
     for (let d = 1; d <= 90; d++) {
       const dayData = DAYS.find(dd => dd.day === d);
       if (!dayData) continue;
 
+      const dt = new Date(dayData.date + 'T00:00:00');
+      const col = getMondayOffset(dt);
       const phase = getPhase(d);
+      const monthName = dt.toLocaleDateString('en-US', { month: 'long' });
+
+      // Phase divider — finish current row, insert divider + headers, reset
       if (phase.id !== lastPhase) {
+        html += finishRow(gridCol);
         lastPhase = phase.id;
+        lastMonth = '';
         html += `<div class="phase-divider">Phase ${phase.id}: ${phase.name}</div>`;
-        // re-add headers after divider
-        headers.forEach(h => { html += `<div class="cal-header">${h}</div>`; });
+        html += addHeaders(headers);
+        gridCol = 0;
       }
 
-      const dt = new Date(dayData.date + 'T00:00:00');
-      const monthName = dt.toLocaleDateString('en-US', { month: 'long' });
+      // Month label — finish current row, insert label, reset
       if (monthName !== lastMonth) {
+        if (lastMonth !== '') html += finishRow(gridCol);
         lastMonth = monthName;
         html += `<div class="month-label">${monthName}</div>`;
+        gridCol = 0;
       }
 
-      // Insert empty cells for first row alignment
-      if (d === 1 || d === 31 || d === 61) {
-        const dayOfWeek = dt.getDay(); // 0=Sun
-        const mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-        for (let e = 0; e < mondayOffset; e++) {
-          html += '<div class="cal-cell empty"></div>';
-        }
+      // Pad empty cells to align to correct weekday column
+      if (gridCol === 0) {
+        html += padRow(col);
+        gridCol = col;
+      } else if (col <= gridCol) {
+        // Wrap to next row — fill remainder then pad new row
+        html += finishRow(gridCol);
+        html += padRow(col);
+        gridCol = col;
+      } else {
+        // Fill gap within same row
+        for (let e = gridCol; e < col; e++) html += '<div class="cal-cell empty"></div>';
+        gridCol = col;
       }
 
       const isToday = d === todayNum;
@@ -284,8 +325,11 @@
         <div class="cal-date">${dateShort}</div>
         <div class="cal-status">${status}</div>
       </div>`;
+      gridCol++;
+      if (gridCol >= 7) gridCol = 0;
     }
 
+    html += finishRow(gridCol);
     html += '</div>';
     app.innerHTML = html;
 
@@ -419,6 +463,28 @@
           </div>
         </div>`;
     }
+    // Milestones section
+    html += '<h2 style="font-size:18px;font-weight:700;margin:24px 0 12px">Milestones</h2>';
+    const todayNum = getTodayDayNumber();
+    for (const m of PLAN_DATA.milestones) {
+      const dayData = DAYS.find(dd => dd.day === m.day);
+      const goalDate = dayData ? formatDate(dayData.date) : 'Day ' + m.day;
+      const mDone = m.day <= todayNum && isDayComplete(dayData);
+      const isPast = m.day < todayNum && !mDone;
+      let borderColor = 'var(--border)';
+      if (mDone) borderColor = 'rgba(34,197,94,.4)';
+      else if (isPast) borderColor = 'rgba(245,158,11,.4)';
+      html += `
+        <div class="score-card" style="border-color:${borderColor}">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+            <div>
+              <div class="score-label" style="margin-bottom:4px">${mDone ? '&#x2705;' : '&#x2B1C;'} ${esc(m.text)}</div>
+              <div style="font-size:13px;color:var(--text-muted)">Day ${m.day} &middot; ${goalDate}</div>
+            </div>
+          </div>
+        </div>`;
+    }
+
     app.innerHTML = html;
 
     app.querySelectorAll('.score-btn').forEach(btn => {

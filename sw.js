@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gtpm-v1';
+const CACHE_NAME = 'gtpm-v2';
 const ASSETS = [
   './',
   './index.html',
